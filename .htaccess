@@ -1,0 +1,13 @@
+# Hébergement mutualisé : si le domaine pointe sur ce dossier (et non sur « public/ »),
+# toutes les requêtes sont renvoyées vers public/. Les fichiers sensibles (.env, config…)
+# restent ainsi inaccessibles depuis le web.
+# Inutile (et ignoré) si la racine du site pointe déjà sur public/ ou sur un serveur Nginx.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Sécurité supplémentaire si mod_rewrite est indisponible.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
