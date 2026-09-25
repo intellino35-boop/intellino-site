@@ -8,12 +8,18 @@
 #     ssh ubuntu@IP_DU_VPS
 #     sudo bash setup-server.sh --domain intellino.tech --email vous@exemple.com
 #
+#  Site de test sur un sous-domaine (sans www, non indexé par Google) :
+#     sudo bash setup-server.sh --domain test.intellino.tech --email vous@exemple.com --noindex
+#  Passage en production ensuite : relancer avec --domain intellino.tech (sans --noindex).
+#
 #  Le script peut être relancé sans risque : chaque étape déjà faite est ignorée.
 #
 #  Options :
 #    --domain       domaine du site, sans « www » (obligatoire)         ex. intellino.tech
 #    --email        e-mail pour les certificats HTTPS Let's Encrypt (obligatoire)
 #    --api-domain   domaine de l'API (défaut : api.<domain>)
+#    --www/--no-www servir aussi www.<domain> (défaut : oui pour un domaine principal, non pour un sous-domaine)
+#    --noindex      demander aux moteurs de recherche de ne pas indexer le site (site de test)
 #    --repo         dépôt Git (défaut : git@github.com:intellino35-boop/intellino-site.git)
 #    --branch       branche à déployer (défaut : main)
 #    --dir          dossier d'installation (défaut : /var/www/intellino)
@@ -32,6 +38,8 @@ APP_DIR="/var/www/intellino"
 DEPLOY_USER="${SUDO_USER:-}"
 SEED=1
 SKIP_SSL=0
+WWW=""
+NOINDEX=0
 PHP_VERSION="8.3"
 
 while [[ $# -gt 0 ]]; do
@@ -45,7 +53,10 @@ while [[ $# -gt 0 ]]; do
         --user) DEPLOY_USER="$2"; shift 2 ;;
         --no-seed) SEED=0; shift ;;
         --skip-ssl) SKIP_SSL=1; shift ;;
-        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+        --www) WWW=1; shift ;;
+        --no-www) WWW=0; shift ;;
+        --noindex) NOINDEX=1; shift ;;
+        -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "Option inconnue : $1 (voir --help)" >&2; exit 1 ;;
     esac
 done
@@ -67,6 +78,14 @@ as_user() { sudo -u "$DEPLOY_USER" -H bash -c "cd '$APP_DIR' && $*"; }
 [[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "root" ]] || fail "Lancez le script avec sudo depuis votre utilisateur (ex. ubuntu), ou précisez --user."
 id "$DEPLOY_USER" &>/dev/null || fail "Utilisateur inconnu : $DEPLOY_USER"
 API_DOMAIN="${API_DOMAIN:-api.$DOMAIN}"
+# www uniquement pour un domaine principal (intellino.tech), pas pour un sous-domaine (test.intellino.tech).
+if [[ -z "$WWW" ]]; then
+    if [[ "$DOMAIN" =~ ^[^.]+\.[^.]+$ ]]; then WWW=1; else WWW=0; fi
+fi
+SITE_HOSTS=("$DOMAIN")
+[[ $WWW -eq 1 ]] && SITE_HOSTS+=("www.$DOMAIN")
+FRONTEND_URLS="$(printf 'https://%s,' "${SITE_HOSTS[@]}")"
+FRONTEND_URLS="${FRONTEND_URLS%,}"
 
 # shellcheck source=/dev/null
 . /etc/os-release
@@ -76,7 +95,7 @@ case "${ID}:${VERSION_ID}" in
 esac
 
 echo "Installation IntellIno"
-echo "  Site : https://$DOMAIN (et www.$DOMAIN)"
+echo "  Site : ${SITE_HOSTS[*]}$([[ $NOINDEX -eq 1 ]] && echo ' (non indexé par les moteurs de recherche)')"
 echo "  API  : https://$API_DOMAIN"
 echo "  Code : $APP_DIR (utilisateur $DEPLOY_USER, branche $BRANCH)"
 export DEBIAN_FRONTEND=noninteractive
@@ -231,7 +250,7 @@ set_env() { # set_env CLÉ VALEUR : remplace ou ajoute la ligne dans backend/.en
 set_env APP_ENV production
 set_env APP_DEBUG false
 set_env APP_URL "https://$API_DOMAIN"
-set_env FRONTEND_URL "https://$DOMAIN,https://www.$DOMAIN"
+set_env FRONTEND_URL "$FRONTEND_URLS"
 set_env DB_HOST localhost # socket local : correspond au compte MySQL 'intellino'@'localhost'
 set_env DB_DATABASE "$DB_NAME"
 set_env DB_USERNAME "$DB_USER"
@@ -273,12 +292,21 @@ ok "Front compilé dans $APP_DIR/frontend-ui/dist"
 step "Nginx (site + API)"
 TEMPLATE="$APP_DIR/deploy/ovh/nginx.conf.template"
 NGINX_SITE="/etc/nginx/sites-available/intellino"
-if [[ -f "$NGINX_SITE" ]] && grep -q "managed by Certbot" "$NGINX_SITE"; then
-    # Déjà configuré avec HTTPS : on ne réécrit pas le fichier (les blocs ajoutés par Certbot seraient perdus).
+ROBOTS_HEADER=""
+[[ $NOINDEX -eq 1 ]] && ROBOTS_HEADER='add_header X-Robots-Tag "noindex, nofollow" always;'
+HAS_NOINDEX=0
+[[ -f "$NGINX_SITE" ]] && grep -q 'X-Robots-Tag' "$NGINX_SITE" && HAS_NOINDEX=1
+if [[ -f "$NGINX_SITE" ]] && grep -q "managed by Certbot" "$NGINX_SITE" \
+    && grep -qF "server_name ${SITE_HOSTS[*]};" "$NGINX_SITE" && grep -qF "server_name $API_DOMAIN;" "$NGINX_SITE" \
+    && [[ $HAS_NOINDEX -eq $NOINDEX ]]; then
+    # Déjà configuré avec HTTPS pour ces domaines : on ne réécrit pas le fichier (les blocs ajoutés par Certbot seraient perdus).
     warn "Configuration Nginx existante avec HTTPS conservée ($NGINX_SITE)."
 else
-    sed -e "s|__DOMAIN__|$DOMAIN|g" -e "s|__API_DOMAIN__|$API_DOMAIN|g" \
+    # Première installation ou changement (ex. passage de test.intellino.tech à intellino.tech) :
+    # la configuration est régénérée, puis Certbot rajoute le HTTPS pour les domaines demandés.
+    sed -e "s|__SERVER_NAMES__|${SITE_HOSTS[*]}|g" -e "s|__API_DOMAIN__|$API_DOMAIN|g" \
         -e "s|__APP_DIR__|$APP_DIR|g" -e "s|__PHP_SOCK__|$PHP_SOCK|g" \
+        -e "s|__ROBOTS_HEADER__|$ROBOTS_HEADER|g" \
         "$TEMPLATE" > "$NGINX_SITE"
 fi
 ln -sf /etc/nginx/sites-available/intellino /etc/nginx/sites-enabled/intellino
@@ -291,7 +319,9 @@ ok "Nginx configuré"
 step "Certificats HTTPS"
 SERVER_IP="$(curl -4 -fsS --max-time 10 https://api.ipify.org || hostname -I | awk '{print $1}')"
 DNS_OK=1
-for host in "$DOMAIN" "www.$DOMAIN" "$API_DOMAIN"; do
+CERT_ARGS=()
+for host in "${SITE_HOSTS[@]}" "$API_DOMAIN"; do
+    CERT_ARGS+=(-d "$host")
     resolved="$(dig +short A "$host" | tail -n1)"
     if [[ "$resolved" != "$SERVER_IP" ]]; then
         warn "$host pointe vers « ${resolved:-rien} » au lieu de $SERVER_IP (enregistrement DNS A à créer ou en cours de propagation)."
@@ -302,7 +332,7 @@ if [[ $SKIP_SSL -eq 1 ]]; then
     warn "HTTPS ignoré (--skip-ssl)."
 elif [[ $DNS_OK -eq 1 ]]; then
     certbot --nginx --non-interactive --agree-tos --redirect -m "$EMAIL" \
-        -d "$DOMAIN" -d "www.$DOMAIN" -d "$API_DOMAIN"
+        --cert-name "$DOMAIN" "${CERT_ARGS[@]}"
     ok "HTTPS activé (renouvellement automatique)"
 else
     warn "HTTPS non activé : corrigez le DNS chez OVH, attendez la propagation, puis relancez ce script."

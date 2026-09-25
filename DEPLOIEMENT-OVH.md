@@ -7,17 +7,18 @@ Dans ce guide, remplacez :
 
 | Exemple | Par |
 |---|---|
-| `intellino.tech` | votre nom de domaine |
 | `51.xx.xx.xx` | l'adresse IPv4 de votre VPS |
 | `vous@exemple.com` | votre adresse e-mail |
 
-Résultat final :
+La mise en ligne se fait en **deux temps** :
 
-| Adresse | Contenu |
-|---|---|
-| `https://intellino.tech` et `https://www.intellino.tech` | le site (React) |
-| `https://intellino.tech/admin` | l'administration |
-| `https://api.intellino.tech` | l'API (Laravel) |
+| Phase | Site | Administration | API |
+|---|---|---|---|
+| **1. Test** (étapes 1 à 7) | `https://test.intellino.tech` | `https://test.intellino.tech/admin` | `https://api.test.intellino.tech` |
+| **2. Production** ([voir plus bas](#passage-en-production-intellinotech)) | `https://intellino.tech` et `https://www.intellino.tech` | `https://intellino.tech/admin` | `https://api.intellino.tech` |
+
+Pendant le test, le site actuel sur `intellino.tech` n'est **pas touché**, et le site de test est marqué « ne pas indexer »
+pour ne pas apparaître dans Google.
 
 ---
 
@@ -38,17 +39,17 @@ Après la livraison (e-mail d'OVH), notez l'**adresse IPv4** du VPS. L'utilisate
 
 Dans l'**espace client OVH** → *Web Cloud* → *Noms de domaine* → votre domaine → onglet **Zone DNS** :
 
+**Ajoutez** deux entrées (bouton *Ajouter une entrée* → type **A**) — les entrées existantes de `intellino.tech` et `www`
+ne changent pas :
+
 | Sous-domaine | Type | Cible |
 |---|---|---|
-| *(vide)* | A | `51.xx.xx.xx` |
-| `www` | A | `51.xx.xx.xx` |
-| `api` | A | `51.xx.xx.xx` |
+| `test` | A | `51.xx.xx.xx` |
+| `api.test` | A | `51.xx.xx.xx` |
 
-- Modifiez les entrées **A** existantes pour le domaine et `www` (elles pointent souvent vers une page d'attente OVH) et
-  **supprimez** les éventuelles entrées `www` de type CNAME en double.
-- Domaine géré ailleurs qu'OVH : créez les trois mêmes entrées A chez votre registrar.
+- Domaine géré ailleurs qu'OVH : créez les deux mêmes entrées A chez votre registrar.
 - La propagation prend de quelques minutes à quelques heures. Vérification depuis PowerShell :
-  `Resolve-DnsName api.intellino.tech` doit afficher l'IP du VPS.
+  `Resolve-DnsName api.test.intellino.tech` doit afficher l'IP du VPS.
 
 > Tant que le DNS n'est pas propagé, l'installation fonctionne mais le HTTPS est reporté : il suffira de relancer le script.
 
@@ -69,8 +70,10 @@ ssh ubuntu@51.xx.xx.xx
 Sur le VPS :
 
 ```bash
-sudo bash setup-server.sh --domain intellino.tech --email vous@exemple.com
+sudo bash setup-server.sh --domain test.intellino.tech --email vous@exemple.com --noindex
 ```
+
+`--noindex` demande aux moteurs de recherche de ne pas référencer le site de test. Un sous-domaine n'utilise pas de `www`.
 
 **Premier lancement : autoriser le serveur à lire le dépôt GitHub (privé).** Le script s'arrête et affiche une clé
 commençant par `ssh-ed25519 …`. Sur GitHub :
@@ -106,9 +109,9 @@ cd /var/www/intellino && php backend/artisan intellino:admin vous@exemple.com --
 
 ## Étape 6 — Vérifications
 
-- [ ] `https://intellino.tech` affiche le site avec ses contenus (solutions, produits…), cadenas HTTPS présent
-- [ ] `https://api.intellino.tech/api/home` affiche du JSON commençant par `{"data":`
-- [ ] `https://intellino.tech/admin` : connexion avec le compte créé à l'étape 5
+- [ ] `https://test.intellino.tech` affiche le site avec ses contenus (solutions, produits…), cadenas HTTPS présent
+- [ ] `https://api.test.intellino.tech/api/home` affiche du JSON commençant par `{"data":`
+- [ ] `https://test.intellino.tech/admin` : connexion avec le compte créé à l'étape 5
 - [ ] Formulaire de contact : le message apparaît dans *Admin → Messages*
 - [ ] Aucune erreur **CORS** dans la console du navigateur (F12)
 - [ ] *Admin → Paramètres* : coordonnées, informations légales (plus de « [À compléter] »), e-mail de notification
@@ -121,6 +124,47 @@ Dans `/var/www/intellino/backend/.env`, renseignez `MAIL_HOST`, `MAIL_PORT`, `MA
 ```bash
 cd /var/www/intellino && php backend/artisan optimize
 ```
+
+---
+
+## Passage en production (intellino.tech)
+
+Quand le site de test vous convient, on bascule **le même serveur** sur le domaine principal. Le contenu, les comptes
+administrateurs, les messages et les images saisis pendant le test sont **conservés** (supprimez depuis l'admin ce qui
+ne doit pas être publié).
+
+1. **DNS** (Zone DNS OVH) : faites pointer le domaine principal vers le VPS.
+
+   | Sous-domaine | Type | Cible |
+   |---|---|---|
+   | *(vide)* | A | `51.xx.xx.xx` |
+   | `www` | A | `51.xx.xx.xx` |
+   | `api` | A | `51.xx.xx.xx` |
+
+   Modifiez les entrées **A** existantes pour le domaine et `www` (elles pointent vers l'hébergement actuel), et
+   **supprimez** une éventuelle entrée `www` de type CNAME en double. Attendez la propagation
+   (`Resolve-DnsName intellino.tech` doit afficher l'IP du VPS).
+
+   > Si des adresses e-mail `@intellino.tech` existent, ne touchez **pas** aux entrées **MX**, **SPF** (TXT) ni aux
+   > éventuels sous-domaines `mail`, `smtp`… : seules les entrées A ci-dessus changent.
+
+2. **Sur le VPS**, relancez le script avec le domaine principal, **sans** `--noindex` :
+
+   ```bash
+   cd /var/www/intellino && sudo bash deploy/ovh/setup-server.sh --domain intellino.tech --email vous@exemple.com
+   ```
+
+   Le script met à jour l'adresse de l'API, le CORS et le front, régénère Nginx pour `intellino.tech`,
+   `www.intellino.tech` et `api.intellino.tech`, et demande les nouveaux certificats HTTPS. `test.intellino.tech` ne
+   répond plus.
+
+3. **Nettoyage** (facultatif) : supprimez l'ancien certificat puis les entrées DNS `test` et `api.test`.
+
+   ```bash
+   sudo certbot delete --cert-name test.intellino.tech
+   ```
+
+4. Refaites les **vérifications** de l'étape 6 avec `intellino.tech`.
 
 ---
 
@@ -167,8 +211,8 @@ migrations, recompile le front, puis remet le site en ligne.
 |---|---|
 | Le script s'arrête à « Code source » | La clé de déploiement n'est pas (encore) ajoutée sur GitHub : étape 4 |
 | « HTTPS non activé » | DNS pas encore propagé : vérifiez l'étape 2, attendez, relancez le script |
-| Page blanche / erreur réseau sur le site | Ouvrez `https://api.intellino.tech/api/home` ; si erreur : `tail -n 50 /var/www/intellino/backend/storage/logs/laravel*.log` |
-| Erreur CORS dans la console | `FRONTEND_URL` dans `backend/.env` doit contenir `https://intellino.tech,https://www.intellino.tech`, puis `php backend/artisan optimize` |
+| Page blanche / erreur réseau sur le site | Ouvrez `https://api.test.intellino.tech/api/home` (ou `api.intellino.tech` en production) ; si erreur : `tail -n 50 /var/www/intellino/backend/storage/logs/laravel*.log` |
+| Erreur CORS dans la console | `FRONTEND_URL` dans `backend/.env` doit être l'adresse exacte du site (`https://test.intellino.tech`, ou `https://intellino.tech,https://www.intellino.tech` en production) ; relancez le script avec le bon `--domain` |
 | Erreur 502 | `sudo systemctl status php8.3-fpm` puis `sudo systemctl restart php8.3-fpm` |
 | Envoi de logo refusé | Image > 4 Mo ou format non accepté (JPG, PNG, WebP) |
 | Journaux Nginx | `sudo tail -n 50 /var/log/nginx/error.log` |

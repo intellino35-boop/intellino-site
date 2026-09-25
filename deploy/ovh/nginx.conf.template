@@ -1,11 +1,11 @@
 # Modèle Nginx utilisé par deploy/ovh/setup-server.sh (les marqueurs __…__ sont remplacés automatiquement).
 # Certbot ajoute ensuite les blocs HTTPS et la redirection HTTP → HTTPS.
 
-# ─── Front React (SPA) : __DOMAIN__ et www.__DOMAIN__ ───────────
+# ─── Front React (SPA) : __SERVER_NAMES__ ───────────
 server {
     listen 80;
     listen [::]:80;
-    server_name __DOMAIN__ www.__DOMAIN__;
+    server_name __SERVER_NAMES__;
 
     root __APP_DIR__/frontend-ui/dist;
     index index.html;
@@ -24,8 +24,13 @@ server {
     }
 
     # index.html jamais mis en cache : une mise à jour est visible immédiatement.
+    # (un add_header dans un bloc location annule ceux du serveur : les en-têtes de sécurité sont donc répétés)
     location = /index.html {
         add_header Cache-Control "no-cache";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        __ROBOTS_HEADER__
     }
 
     gzip on;
@@ -34,6 +39,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    __ROBOTS_HEADER__
 
     location ~ /\.(?!well-known).* {
         deny all;
@@ -51,6 +57,7 @@ server {
     index index.php;
     charset utf-8;
     client_max_body_size 10M; # envoi du logo / de l'image d'accueil depuis l'admin
+    __ROBOTS_HEADER__
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
