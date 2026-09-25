@@ -102,4 +102,4 @@ cd frontend-ui && npm run lint && npm run build
 
 ## Mise en ligne
 
-Voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)** (hébergement mutualisé ou VPS) et **[DEPLOIEMENT-OVH.md](DEPLOIEMENT-OVH.md)** (VPS OVH, installation automatisée).
+Voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)** (hébergement mutualisé ou VPS), **[DEPLOIEMENT-OVH-WEB.md](DEPLOIEMENT-OVH-WEB.md)** (hébergement web OVH) et **[DEPLOIEMENT-OVH.md](DEPLOIEMENT-OVH.md)** (VPS OVH, installation automatisée).

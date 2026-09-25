@@ -18,6 +18,8 @@ Le site est composé de **deux parties** à héberger séparément, idéalement 
 
 ## Option A — Hébergement mutualisé (cPanel, Hostinger, o2switch…)
 
+> **Hébergement web OVH : suivez le guide dédié [DEPLOIEMENT-OVH-WEB.md](DEPLOIEMENT-OVH-WEB.md)** (multisite, `.ovhconfig`, `.env` pré-rempli).
+
 ### 1. Préparer l'archive (sur votre PC)
 
 Depuis la racine du dépôt, en indiquant l'adresse **de production** de l'API :

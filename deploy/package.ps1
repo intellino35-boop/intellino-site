@@ -8,6 +8,14 @@
     -ApiUrl       : adresse de l'API en production, intégrée au front au moment du build (VITE_API_URL). Obligatoire.
     -WithDatabase : ajoute backend\database\intellino.sql (structure + contenu du site + comptes admin),
                     à importer via phpMyAdmin. Les messages de contact, sessions, jetons et caches ne sont PAS exportés.
+    -FrontendUrl  : adresse(s) du site (séparées par des virgules). Ajoute backend\.env.a-completer, déjà rempli
+                    (APP_URL, FRONTEND_URL, APP_KEY générée) : il ne reste que la base de données à renseigner.
+    -Ovh          : hébergement web OVH : ajoute backend\public\.ovhconfig (PHP 8.3 pour l'API).
+    -NoIndex      : site de test : demande aux moteurs de recherche de ne pas l'indexer.
+
+    Exemple (site de test sur l'hébergement web OVH) :
+        powershell -ExecutionPolicy Bypass -File deploy\package.ps1 -ApiUrl https://api.test.intellino.tech/api `
+            -FrontendUrl https://test.intellino.tech -Ovh -NoIndex -WithDatabase
 
     Résultat : dist\intellino-AAAAMMJJ-HHMM.zip contenant
         backend\   → API Laravel (à placer sur le sous-domaine de l'API, racine = backend\public)
@@ -17,6 +25,9 @@
 param(
     [Parameter(Mandatory = $true)][string]$ApiUrl,
     [switch]$WithDatabase,
+    [string]$FrontendUrl = '',
+    [switch]$Ovh,
+    [switch]$NoIndex,
     [string]$DbName = 'intellino',
     [string]$DbUser = 'root'
 )
@@ -44,6 +55,15 @@ Remove-Item Env:\VITE_API_URL
 Pop-Location
 if ($buildExit -ne 0) { throw 'La compilation du front a échoué.' }
 Copy-Item (Join-Path $root 'frontend-ui\dist') (Join-Path $stage 'frontend') -Recurse
+
+$utf8 = New-Object Text.UTF8Encoding $false
+if ($NoIndex) {
+    Step 'Site de test : indexation par les moteurs de recherche désactivée'
+    [IO.File]::WriteAllText((Join-Path $stage 'frontend\robots.txt'), "User-agent: *`nDisallow: /`n", $utf8)
+    $htaccess = Join-Path $stage 'frontend\.htaccess'
+    $rules = "`n<IfModule mod_headers.c>`n    Header set X-Robots-Tag `"noindex, nofollow`"`n</IfModule>`n"
+    [IO.File]::AppendAllText($htaccess, $rules, $utf8)
+}
 
 # ─── Backend Laravel ────────────────────────────────────────────
 Step 'Copie du backend Laravel'
@@ -80,6 +100,30 @@ if ($WithDatabase) {
     $data = & mysqldump @common --no-create-info @ignore $DbName
     if ($LASTEXITCODE -ne 0) { throw 'mysqldump a échoué (MySQL est-il démarré ?).' }
     [IO.File]::WriteAllText($sql, (($schema + $data) -join "`n"), (New-Object Text.UTF8Encoding $false))
+}
+
+if ($Ovh) {
+    Step 'Hébergement web OVH : .ovhconfig (PHP 8.3)'
+    $ovhconfig = "app.engine=php`napp.engine.version=8.3`nhttp.firewall=none`nenvironment=production`ncontainer.image=stable64`n"
+    [IO.File]::WriteAllText((Join-Path $backend 'public\.ovhconfig'), $ovhconfig, $utf8)
+}
+
+if ($FrontendUrl) {
+    Step 'Préparation de backend\.env.a-completer'
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $values = [ordered]@{
+        'APP_KEY'      = 'base64:' + [Convert]::ToBase64String($bytes)
+        'APP_URL'      = ($ApiUrl -replace '/api/?$', '').TrimEnd('/')
+        'FRONTEND_URL' = (($FrontendUrl -split ',') | ForEach-Object { $_.Trim().TrimEnd('/') }) -join ','
+    }
+    $envText = [IO.File]::ReadAllText((Join-Path $backendSrc '.env.production.example'))
+    foreach ($key in $values.Keys) {
+        $envText = $envText -replace "(?m)^$key=.*$", "$key=$($values[$key])"
+    }
+    $header = "# À COMPLÉTER : DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD (et MAIL_* pour les e-mails),`n" +
+              "# puis renommer ce fichier en .env sur le serveur. Ne jamais le publier.`n"
+    [IO.File]::WriteAllText((Join-Path $backend '.env.a-completer'), $header + ($envText -replace "`r`n", "`n"), $utf8)
 }
 
 Step 'Création de l''archive ZIP'
