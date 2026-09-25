@@ -6,7 +6,7 @@ Site vitrine et administration d'IntellIno, en deux projets séparés :
 intellino-site/
 ├── backend/       # Laravel 13 : API REST, authentification (Sanctum), base MySQL, administration (API)
 ├── frontend-ui/   # React 19 + Vite : pages, composants, animations, appels API (Axios)
-└── deploy/        # Script d'archive, script VPS, configuration Nginx
+└── deploy/        # Script d'archive, script VPS, configuration Nginx, ovh/ (installation automatisée d'un VPS OVH)
 ```
 
 | | Technologies |
@@ -102,4 +102,4 @@ cd frontend-ui && npm run lint && npm run build
 
 ## Mise en ligne
 
-Voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)**.
+Voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)** (hébergement mutualisé ou VPS) et **[DEPLOIEMENT-OVH.md](DEPLOIEMENT-OVH.md)** (VPS OVH, installation automatisée).

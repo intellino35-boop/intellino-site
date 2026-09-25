@@ -3,3 +3,5 @@
 /.claude
 .DS_Store
 Thumbs.db
+# Cache Vite créé quand le serveur de développement est lancé depuis la racine
+/node_modules

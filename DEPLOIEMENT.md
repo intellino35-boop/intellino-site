@@ -68,6 +68,8 @@ Relancez `package.ps1` (sans `-WithDatabase`), renvoyez `frontend` et `backend` 
 
 ## Option B — VPS (Ubuntu / Debian)
 
+> **VPS OVH : suivez le guide dédié [DEPLOIEMENT-OVH.md](DEPLOIEMENT-OVH.md)**, avec installation automatisée du serveur (`deploy/ovh/setup-server.sh`).
+
 ```bash
 sudo apt install nginx mysql-server php8.3-fpm php8.3-mysql php8.3-mbstring php8.3-xml php8.3-curl php8.3-bcmath unzip
 # + Composer (getcomposer.org) et Node.js 20+ (nodesource.com)
