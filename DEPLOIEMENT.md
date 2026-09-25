@@ -1,114 +1,108 @@
-# Mise en ligne du site IntellIno
+# Mise en ligne du site IntellIno (API Laravel + front React)
+
+Le site est composé de **deux parties** à héberger séparément, idéalement sur deux adresses :
+
+| Partie | Exemple d'adresse | Contenu | Racine web |
+|---|---|---|---|
+| Front React | `https://www.votre-domaine.com` | fichiers statiques compilés | le dossier `frontend` de l'archive (ou `frontend-ui/dist`) |
+| API Laravel | `https://api.votre-domaine.com` | PHP + MySQL | le dossier `backend/public` |
 
 ## Prérequis chez l'hébergeur
 
-- **PHP 8.3 ou plus récent**, avec les extensions : `pdo_mysql`, `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `bcmath`, `curl`
+- **PHP 8.3+** (extensions `pdo_mysql`, `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `bcmath`, `curl`)
 - **MySQL 5.7+ ou MariaDB 10.3+**
-- Un certificat **HTTPS** (Let's Encrypt, gratuit chez la plupart des hébergeurs)
-- Idéalement un accès **SSH / Terminal** (sinon, voir « Sans SSH » plus bas)
+- **HTTPS** sur les deux adresses (Let's Encrypt, gratuit chez la plupart des hébergeurs)
+- La possibilité de créer un **sous-domaine** (`api.`) pointant vers un dossier choisi
 
 ---
 
-## Option A — Hébergement mutualisé (cPanel, Hostinger, o2switch, LWS…)
+## Option A — Hébergement mutualisé (cPanel, Hostinger, o2switch…)
 
 ### 1. Préparer l'archive (sur votre PC)
 
-Dans le dossier `intellino-site` :
+Depuis la racine du dépôt, en indiquant l'adresse **de production** de l'API :
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File deploy\package.ps1 -WithDatabase
+powershell -ExecutionPolicy Bypass -File deploy\package.ps1 -ApiUrl https://api.votre-domaine.com/api -WithDatabase
 ```
 
-Résultat : `dist\intellino-site-AAAAMMJJ-HHMM.zip` (front-end compilé, dépendances de production, export SQL). Il ne contient **pas** votre `.env`.
+Résultat : `dist\intellino-AAAAMMJJ-HHMM.zip` avec `frontend\` (site compilé) et `backend\` (API + dépendances + export SQL).
+Aucun fichier `.env` n'est inclus.
 
-### 2. Créer la base de données
+### 2. Base de données
 
-Dans le panneau de l'hébergeur (« Bases de données MySQL ») : créez une base, un utilisateur et donnez-lui tous les droits sur la base. Notez les trois informations.
+Dans le panneau de l'hébergeur : créez une base MySQL, un utilisateur, et donnez-lui tous les droits sur la base.
 
-### 3. Envoyer les fichiers
+### 3. API (sous-domaine `api.`)
 
-1. Envoyez le ZIP dans votre espace (gestionnaire de fichiers ou FTP), **à côté** de `public_html` et non dedans, puis décompressez-le. Vous obtenez un dossier `intellino-site/`.
-2. Faites pointer le domaine sur **`intellino-site/public`** :
-   - cPanel : *Domaines* → modifier la « racine du document » ;
-   - si l'hébergeur ne le permet pas : décompressez dans `public_html` ; le fichier `.htaccess` fourni à la racine redirige automatiquement vers `public/` et protège les fichiers sensibles.
-
-### 4. Configurer
-
-1. Copiez `.env.production.example` en **`.env`** et complétez : `APP_URL`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, l'envoi d'e-mails (`MAIL_*`), vos coordonnées (`INTELLINO_*`) et vos informations légales (`LEGAL_*`).
-2. Dans le Terminal de l'hébergeur, depuis `intellino-site/` :
+1. Créez le sous-domaine `api.votre-domaine.com` et faites pointer sa racine sur **`…/backend/public`**.
+2. Envoyez le dossier `backend` de l'archive (hors de `public_html`).
+3. Copiez `backend/.env.production.example` en **`backend/.env`** et complétez :
+   - `APP_URL=https://api.votre-domaine.com`
+   - `FRONTEND_URL=https://www.votre-domaine.com,https://votre-domaine.com` (origines autorisées par le CORS)
+   - `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, puis l'e-mail (`MAIL_*`)
+4. Dans le Terminal, depuis `backend/` :
 
 ```bash
 php artisan key:generate
 php artisan migrate --force
 php artisan optimize
-```
-
-3. Créez (ou réinitialisez) votre compte administrateur :
-
-```bash
 php artisan intellino:admin votre@email.com --password="un-mot-de-passe-solide"
 ```
 
-### Sans SSH ni Terminal
+Sans Terminal : importez `backend/database/intellino.sql` dans phpMyAdmin et reprenez l'`APP_KEY` de votre `.env` local.
 
-1. Dans **phpMyAdmin**, sélectionnez la base puis *Importer* le fichier `database/intellino.sql` (contenu du site + comptes admin existants ; aucun message de contact).
-2. Dans `.env`, renseignez `APP_KEY` avec la valeur de votre `.env` local (ligne `APP_KEY=base64:…`).
-3. Connectez-vous à `/admin` avec votre compte existant, puis changez le mot de passe dès que possible (demandez à l'hébergeur d'activer SSH pour les mises à jour futures).
+5. Vérifiez : `https://api.votre-domaine.com/api/home` doit renvoyer du JSON (`"status": true`).
 
-> Sans `php artisan optimize`, le site fonctionne mais un peu moins vite.
+### 4. Front (domaine principal)
 
-### Mettre à jour le site plus tard
+Envoyez **le contenu** du dossier `frontend` de l'archive dans `public_html`. Le fichier `.htaccess` fourni renvoie toutes les adresses vers `index.html` (nécessaire au routage React). Ouvrez `https://www.votre-domaine.com` : les données doivent s'afficher.
 
-Relancez `deploy\package.ps1` (sans `-WithDatabase`), renvoyez les fichiers **sans écraser** `.env` ni `storage/`, puis exécutez `php artisan migrate --force` et `php artisan optimize`.
+> L'adresse de l'API est intégrée au front lors de la compilation : si elle change, relancez `package.ps1` avec la nouvelle `-ApiUrl`.
+
+### Mettre à jour plus tard
+
+Relancez `package.ps1` (sans `-WithDatabase`), renvoyez `frontend` et `backend` **sans écraser** `backend/.env`, `backend/storage/` ni `backend/public/images/uploads/`, puis `php artisan migrate --force` et `php artisan optimize`.
 
 ---
 
 ## Option B — VPS (Ubuntu / Debian)
 
 ```bash
-# 1. Paquets
 sudo apt install nginx mysql-server php8.3-fpm php8.3-mysql php8.3-mbstring php8.3-xml php8.3-curl php8.3-bcmath unzip
 # + Composer (getcomposer.org) et Node.js 20+ (nodesource.com)
 
-# 2. Code (via Git, ou envoi du ZIP dans /var/www puis unzip)
-cd /var/www && git clone <votre-dépôt> intellino-site && cd intellino-site
+cd /var/www && git clone <votre-dépôt> intellino && cd intellino
+cp backend/.env.production.example backend/.env && nano backend/.env    # APP_URL, FRONTEND_URL, DB_*, MAIL_*
+php backend/artisan key:generate
+echo "VITE_API_URL=https://api.votre-domaine.com/api" > frontend-ui/.env
+sudo chown -R www-data:www-data backend/storage backend/bootstrap/cache backend/public/images/uploads
 
-# 3. Configuration
-cp .env.production.example .env && nano .env
-php artisan key:generate
-
-# 4. Droits d'écriture
-sudo chown -R www-data:www-data storage bootstrap/cache
-
-# 5. Installation / mises à jour
 bash deploy/deploy.sh
-php artisan intellino:admin votre@email.com --password="un-mot-de-passe-solide"
+php backend/artisan intellino:admin votre@email.com --password="un-mot-de-passe-solide"
 ```
 
-Serveur web : adaptez `deploy/nginx.conf.example` (domaine, chemin, version de PHP), activez-le, puis installez le certificat HTTPS avec `sudo certbot --nginx`.
-
-Chaque mise à jour ensuite : `bash deploy/deploy.sh` (maintenance automatique, dépendances, build, migrations, cache).
+Serveur web : adaptez `deploy/nginx.conf.example` (deux blocs : front + API), puis `sudo certbot --nginx` pour le HTTPS.
+Chaque mise à jour : `bash deploy/deploy.sh`.
 
 ---
 
 ## Checklist après la mise en ligne
 
-- [ ] Le site s'ouvre en **https://** et le cadenas s'affiche
-- [ ] `APP_DEBUG=false` dans `.env` (sinon les erreurs affichent des informations sensibles)
+- [ ] `https://www.votre-domaine.com` s'affiche avec les données (solutions, produits…)
+- [ ] `https://api.votre-domaine.com/api/home` renvoie du JSON ; `APP_DEBUG=false` dans `backend/.env`
 - [ ] Le formulaire de contact fonctionne ; le message apparaît dans `/admin/messages`
-- [ ] Si `INTELLINO_NOTIFY_EMAIL` est renseigné : l'e-mail de notification arrive bien
-- [ ] Les pages **Mentions légales** et **Confidentialité** n'affichent plus de « [À compléter] »
-- [ ] `https://votre-domaine/robots.txt` affiche `Disallow: /admin` et l'adresse du sitemap
-- [ ] Soumettre `https://votre-domaine/sitemap.xml` dans Google Search Console
-- [ ] Mot de passe administrateur fort et personnel
-- [ ] Sauvegardes automatiques de la base activées chez l'hébergeur
+- [ ] Connexion à `https://www.votre-domaine.com/admin` avec votre compte administrateur
+- [ ] La console du navigateur ne signale aucune erreur **CORS** (sinon : vérifier `FRONTEND_URL`, puis `php artisan optimize`)
+- [ ] Mentions légales et Confidentialité sans « [À compléter] » (réglables dans *Admin → Paramètres*)
+- [ ] Plan du site : `https://api.votre-domaine.com/sitemap.xml` (à déclarer dans Google Search Console) ; mettre son adresse dans `frontend/robots.txt`
+- [ ] Sauvegardes automatiques de la base activées
 
 ## Bon à savoir
 
-- **Paramètres modifiables en ligne** : coordonnées, informations légales, logo et image d'accueil se règlent dans `/admin/parametres` (prioritaires sur le `.env`). Le dossier `public/images/uploads/` doit être **accessible en écriture** par PHP (droits 755, propriétaire `www-data` sur un VPS).
-- **Mises à jour** : ne supprimez jamais `public/images/uploads/` sur le serveur (il contient les images envoyées depuis l'admin).
-
-- **Derrière Cloudflare** : ajoutez `TRUSTED_PROXIES=*` dans `.env`, sinon la limitation des envois du formulaire s'appliquerait à Cloudflare plutôt qu'aux visiteurs.
-- **Logo et image d'accueil** : fichiers locaux `public/images/logo.png` (256×256, version pleine taille : `logo-1024.png`) et `public/images/hero.jpg`. Pour les changer, remplacez ces fichiers en gardant le même nom, ou indiquez un autre chemin avec `INTELLINO_LOGO` / `INTELLINO_HERO_IMAGE`.
-- **Mode maintenance** : `php artisan down` / `php artisan up` (une page « Site en maintenance » s'affiche aux visiteurs).
-- **Journaux d'erreurs** : `storage/logs/`.
+- **CORS** : seules les origines listées dans `FRONTEND_URL` peuvent appeler l'API depuis un navigateur. Ne jamais mettre `*`.
+- **Sessions de l'administration** : jetons valables 8 h (30 jours avec « Se souvenir de moi »), réglables avec `ADMIN_TOKEN_HOURS` / `ADMIN_TOKEN_REMEMBER_DAYS`. Désactiver un compte révoque immédiatement ses jetons.
+- **Images envoyées depuis l'admin** : stockées dans `backend/public/images/uploads/` (dossier accessible en écriture, à ne jamais supprimer lors d'une mise à jour).
+- **Derrière Cloudflare** : ajoutez `TRUSTED_PROXIES=*` dans `backend/.env`.
+- **Maintenance** : `php artisan down` / `php artisan up` (l'API répond alors 503).
+- **Journaux d'erreurs** : `backend/storage/logs/`.
