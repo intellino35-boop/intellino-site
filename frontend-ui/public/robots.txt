@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /admin
+
+# Plan du site généré par l'API : remplacez par l'URL de votre API en production.
+# Sitemap: https://api.votre-domaine.com/sitemap.xml

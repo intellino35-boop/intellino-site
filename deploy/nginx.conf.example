@@ -1,32 +1,56 @@
-# Configuration Nginx pour un VPS (Ubuntu/Debian, PHP-FPM 8.3+).
-# Copier dans /etc/nginx/sites-available/intellino, adapter le domaine, le chemin et la version de PHP,
-# puis : ln -s /etc/nginx/sites-available/intellino /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx
-# Certificat HTTPS gratuit ensuite : certbot --nginx -d votre-domaine.com -d www.votre-domaine.com
+# Configuration Nginx pour un VPS (Ubuntu/Debian, PHP-FPM 8.3+) : deux sites.
+#   - www.votre-domaine.com → front React compilé (frontend-ui/dist)
+#   - api.votre-domaine.com → API Laravel (backend/public)
+# Copier dans /etc/nginx/sites-available/intellino, adapter domaines, chemins et version de PHP, puis :
+#   ln -s /etc/nginx/sites-available/intellino /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx
+# Certificats HTTPS gratuits : certbot --nginx -d votre-domaine.com -d www.votre-domaine.com -d api.votre-domaine.com
 
+# ─── Front React (SPA) ───────────────────────────────────────────
 server {
     listen 80;
     listen [::]:80;
     server_name votre-domaine.com www.votre-domaine.com;
 
-    # La racine DOIT être le dossier public/ du projet.
-    root /var/www/intellino-site/public;
-    index index.php;
-
+    root /var/www/intellino/frontend-ui/dist;
+    index index.html;
     charset utf-8;
-    client_max_body_size 10M;
 
+    # Toutes les adresses (/produits/…, /admin/…) renvoient vers index.html : React Router gère la navigation.
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files $uri $uri/ /index.html;
     }
 
-    # Fichiers générés par Vite : mise en cache longue (leurs noms changent à chaque build).
-    location /build/ {
+    # Fichiers compilés : noms uniques à chaque build → cache long.
+    location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         access_log off;
     }
 
-    location = /favicon.ico { access_log off; log_not_found off; }
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+
+# ─── API Laravel ─────────────────────────────────────────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.votre-domaine.com;
+
+    # La racine DOIT être le dossier public/ du backend.
+    root /var/www/intellino/backend/public;
+    index index.php;
+    charset utf-8;
+    client_max_body_size 10M; # envoi du logo / de l'image d'accueil depuis l'admin
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
     error_page 404 /index.php;
 
@@ -37,7 +61,6 @@ server {
         fastcgi_hide_header X-Powered-By;
     }
 
-    # Bloque les fichiers cachés (.env, .git…).
     location ~ /\.(?!well-known).* {
         deny all;
     }
